@@ -1,4 +1,5 @@
 import subprocess
+import os
 
 ###
 # https://en.wikibooks.org/wiki/Algorithm_Implementation/Mathematics/Extended_Euclidean_algorithm
@@ -46,27 +47,51 @@ e2_2 = d2 % (p2 - 1)
 coef1 = pow(p1, p0 - 2, p0)
 coef2 = pow(p2, p0 - 2, p0)
 
-print("** Key 1 **")
-print("p0:", hex(p0))
-print("p1:", hex(p1))
-print("\nn1:", hex(n1))
-print("e:", hex(e))
-print("d1:", hex(d1))
-print("e1_1:", hex(e1_1))
-print("e1_2:", hex(e1_2))
-print("coef1:", hex(coef1))
+with open("key1.conf", "w") as f:
+    f.write("asn1=SEQUENCE:private_key\n[private_key]\nversion=INTEGER:0\n")
+    f.write("n=INTEGER:" + hex(n1) + "\n")
+    f.write("e=INTEGER:" + hex(e) + "\n")
+    f.write("d=INTEGER:" + hex(d1) + "\n")
+    f.write("p=INTEGER:" + hex(p0) + "\n")
+    f.write("q=INTEGER:" + hex(p1) + "\n")
+    f.write("exp1=INTEGER:" + hex(e1_1) + "\n")
+    f.write("exp2=INTEGER:" + hex(e1_2) + "\n")
+    f.write("coeff=INTEGER:" + hex(coef1) + "\n")
 
-print("\n** Key 2 **")
-print("p0:", hex(p0))
-print("p2:", hex(p2))
-print("\nn2:", hex(n2))
-print("e:", hex(e))
-print("d2:", hex(d2))
-print("e2_1:", hex(e2_1))
-print("e2_2:", hex(e2_2))
-print("coef2:", hex(coef2))
+with open("key2.conf", "w") as f:
+    f.write("asn1=SEQUENCE:private_key\n[private_key]\nversion=INTEGER:0\n")
+    f.write("n=INTEGER:" + hex(n2) + "\n")
+    f.write("e=INTEGER:" + hex(e) + "\n")
+    f.write("d=INTEGER:" + hex(d2) + "\n")
+    f.write("p=INTEGER:" + hex(p0) + "\n")
+    f.write("q=INTEGER:" + hex(p2) + "\n")
+    f.write("exp1=INTEGER:" + hex(e2_1) + "\n")
+    f.write("exp2=INTEGER:" + hex(e2_2) + "\n")
+    f.write("coeff=INTEGER:" + hex(coef2) + "\n")
 
-# Put this all together into two text files in the appropriate format. Example:
+os.system("openssl asn1parse -genconf key1.conf -out key1.der -noout")
+os.system("openssl asn1parse -genconf key2.conf -out key2.der -noout")
+os.system("openssl rsa -inform DER -outform PEM -in key1.der -out key1.pem")
+os.system("openssl rsa -inform DER -outform PEM -in key2.der -out key2.pem")
+os.system("openssl req -new -nodes -key key1.pem -out csr1.pem -subj /CN=ejemplo")
+os.system("openssl req -new -nodes -key key2.pem -out csr2.pem -subj /CN=ejemplo")
+os.system("openssl req -x509 -nodes -sha256 -days 36500 -key key1.pem -in csr1.pem -out cert1.pem")
+os.system("openssl req -x509 -nodes -sha256 -days 36500 -key key2.pem -in csr2.pem -out cert2.pem")
+os.system("rm -rf key1.conf key2.conf key1.der key2.der csr1.pem csr2.pem")
+
+# Private keys
+os.system("rm key1.pem key2.pem")
+
+os.system("echo 'pwd42' > passwd.txt")
+os.system("openssl x509 -pubkey -noout -in cert1.pem > pubkey.pem")
+os.system("openssl rsautl -encrypt -inkey pubkey.pem -pubin -in passwd.txt -out passwd.enc")
+os.system("echo 'You win!! This is the secret message.' > msg.txt")
+os.system("openssl enc -in msg.txt -out encrypted_file.txt -e -aes256 -kfile passwd.txt")
+os.system("rm pubkey.pem passwd.txt msg.txt")
+
+
+# HOW TO
+# Put the numbers into two text files in the appropriate format. Example:
 '''
 asn1=SEQUENCE:private_key
 [private_key]
@@ -102,12 +127,11 @@ coeff=INTEGER:0x30B9E4F2AFA5AC679F920FC83F1F2DF1BAF1779CF989447FABC2F5\
 # > openssl rsa -in newkey.der -inform der -text -check
 # Convert DER Format To PEM Format For RSA Key
 # > openssl rsa -inform DER -outform PEM -in mykey.der -out mykey.pem
-
+# To get the public key from the private key
+# > openssl rsa rsa -in mykey.pem -pubout > pubkey.pem
 
 # https://stackoverflow.com/questions/19850283/how-to-generate-rsa-keys-using-specific-input-numbers-in-openssl
 # https://stackoverflow.com/questions/33705487/how-to-calculate-the-coefficient-of-a-rsa-private-key
-
-
 
 # ** To generate a certificate from the private key **
 # Generate certificate request
@@ -116,3 +140,14 @@ coeff=INTEGER:0x30B9E4F2AFA5AC679F920FC83F1F2DF1BAF1779CF989447FABC2F5\
 # > openssl req -x509 -nodes -sha256 -days 36500 -key mykey.pem -in csr.pem -out cert.pem
 # Get public key from certificate
 # > openssl x509 -pubkey -noout -in cert.pem > pubkey.pem
+
+# ** Encrypt a message with a public key **
+# > openssl rsautl -encrypt -inkey pubkey.pem -pubin -in top_secret.txt -out top_secret.enc
+# Decrypt with the private key
+# > openssl rsautl -decrypt -inkey mykey.pem -in top_secret.enc > top_secret.txt
+
+# ** Encrypt/Decrypt with a symmetric key
+# > openssl enc -in file.txt -out encrypted_file.txt -e -aes256
+# # enter aes-256-cbc encryption password:
+# > openssl enc -in encrypted_file.txt -out clear_text_file.txt -d -aes256
+# # enter aes-256-cbc decryption password:
