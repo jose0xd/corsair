@@ -8,6 +8,53 @@
 #include <openssl/evp.h>
 #include <openssl/rsa.h>
 
+#define CERT1 "cert1.pem"
+#define CERT2 "cert2.pem"
+#define PASSWD "passwd.enc"
+
+void	oh_no(char *msg);
+RSA		*get_public_key(char *cert_file);
+void	get_prime_factors(RSA *pubkey1, RSA *pubkey2, BIGNUM **p, BIGNUM **q);
+RSA		*generate_private_key(BIGNUM *p, BIGNUM *q);
+
+int main()
+{
+	RSA	*pubkey1 = get_public_key(CERT1);
+	RSA	*pubkey2 = get_public_key(CERT2);
+
+	BIGNUM *p, *q;
+	get_prime_factors(pubkey1, pubkey2, &p, &q);
+	RSA *priv_key = generate_private_key(p, q);
+
+	BIO *out_file = BIO_new_file("private_key.pem", "w");
+	PEM_write_bio_RSAPrivateKey(out_file, priv_key, NULL, NULL, 0, NULL, NULL);
+	BIO_free_all(out_file);
+
+	int len = RSA_size(priv_key);
+	int fd = open(PASSWD, O_RDONLY);
+	unsigned char *en_passwd = malloc(len * sizeof(char));
+	read(fd, en_passwd, len);
+	close(fd);
+	unsigned char *passwd = malloc(32 * sizeof(char)); // aes256 -> key = 32b
+	for (int i = 0; i < 32; i++) passwd[i] = 0;
+
+	int res = RSA_private_decrypt(len, (const unsigned char *)en_passwd,
+			passwd, priv_key, RSA_PKCS1_PADDING);
+	if (res == -1)
+		printf("Error: cannot decrypt the password\n");
+	else
+	{
+		passwd[res - 1] = '\0'; // \n at end of file
+		printf("passwd: %s\n", passwd);
+		printf("Use this command:\n"
+			"'openssl enc -in encrypted_file.txt -out message.txt -d -aes256'\n");
+	}
+	
+	RSA_free(pubkey1);
+	RSA_free(pubkey2);
+	RSA_free(priv_key); // p and q are inside priv_key
+}
+
 void	oh_no(char *msg)
 {
 	fprintf(stderr, "%s", msg);
@@ -95,72 +142,4 @@ RSA	*generate_private_key(BIGNUM *p, BIGNUM *q)
 	BN_CTX_free(ctx);
 
 	return (priv_key);
-}
-
-int decrypt(unsigned char *ciphertext, int ciphertext_len, unsigned char *key,
-		unsigned char *plaintext)
-{
-	int				len;
-	int				plaintext_len;
-	EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
-
-	if (1 != EVP_DecryptInit_ex(ctx, EVP_aes_256_cbc(), NULL, key, NULL))
-		oh_no("Error: cannot initiate decrypting\n");
-
-printf("key: %s\n", key);
-	if (1 != EVP_DecryptUpdate(ctx, plaintext, &len,
-				ciphertext, ciphertext_len))
-		oh_no("Error: cannot decrypt the message\n");
-	plaintext_len += len;
-
-/*printf("len: %d\nplaintext: %s\n", len, plaintext);*/
-	EVP_DecryptFinal_ex(ctx, plaintext + len, &len);
-	plaintext_len += len;
-
-	EVP_CIPHER_CTX_free(ctx);
-	return (plaintext_len);
-}
-
-int main()
-{
-	RSA	*pubkey1 = get_public_key("cert1.pem");
-	RSA	*pubkey2 = get_public_key("cert2.pem");
-
-	BIGNUM *p, *q;
-	get_prime_factors(pubkey1, pubkey2, &p, &q);
-	RSA *priv_key = generate_private_key(p, q);
-
-	BIO *out_file = BIO_new_file("private_key.pem", "w");
-	PEM_write_bio_RSAPrivateKey(out_file, priv_key, NULL, NULL, 0, NULL, NULL);
-	BIO_free_all(out_file);
-
-	int len = RSA_size(priv_key);
-	int fd = open("passwd.enc", O_RDONLY);
-	unsigned char *en_passwd = malloc(len * sizeof(char));
-	read(fd, en_passwd, len);
-	close(fd);
-	unsigned char *passwd = malloc(len * sizeof(char));
-
-	int res = RSA_private_decrypt(len, (const unsigned char *)en_passwd,
-			passwd, priv_key, RSA_PKCS1_PADDING);
-	if (res == -1)
-		printf("Error: cannot decrypt the password\n");
-	else
-	{
-		passwd[res - 1] = '\0';
-		printf("passwd: %s\n", passwd);
-	}
-	fd = open("encrypted_file.txt", O_RDONLY);
-	unsigned char *enc_text = malloc(len * sizeof(char));
-	len = read(fd, enc_text, len);
-	close(fd);
-printf("enc_text: %s\n", enc_text);
-	unsigned char *result = malloc(256 * sizeof(char));
-	res = decrypt(enc_text, len, passwd, result);
-	result[res - 1] = '\0';
-	printf("res: %d, len: %d\nresult: %s\n", res, len, (char *)result);
-	
-	RSA_free(pubkey1);
-	RSA_free(pubkey2);
-	RSA_free(priv_key); // p and q are inside priv_key
 }

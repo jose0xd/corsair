@@ -4,6 +4,3 @@ CPPFLAGS="-I/sgoinfre/goinfre/Perso/$(USER)/homebrew/Cellar/openssl@1.1/1.1.1o/i
 
 all:
 	gcc $(CPPFLAGS) $(LDFLAGS) -lssl -lcrypto -o corsair  main.c
-
-prueba: ej.c
-	gcc $(CPPFLAGS) $(LDFLAGS) -lssl -lcrypto -o prueba  ej.c
