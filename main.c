@@ -19,17 +19,27 @@ RSA		*generate_private_key(BIGNUM *p, BIGNUM *q);
 
 int main()
 {
+	// Get private key1 from cert1 and cert2
 	RSA	*pubkey1 = get_public_key(CERT1);
 	RSA	*pubkey2 = get_public_key(CERT2);
 
 	BIGNUM *p, *q;
 	get_prime_factors(pubkey1, pubkey2, &p, &q);
 	RSA *priv_key = generate_private_key(p, q);
+	RSA_free(pubkey1);
+	RSA_free(pubkey2);
 
 	BIO *out_file = BIO_new_file("private_key.pem", "w");
 	PEM_write_bio_RSAPrivateKey(out_file, priv_key, NULL, NULL, 0, NULL, NULL);
 	BIO_free_all(out_file);
 
+	// Show information about private key
+	BIO *output = BIO_new_fp(stdout, BIO_NOCLOSE);
+	RSA_print(output, priv_key, 0);
+	PEM_write_bio_RSAPrivateKey(output, priv_key, NULL, NULL, 0, NULL, NULL);
+	BIO_free_all(output);
+
+	// Decrypt password with the private key
 	int len = RSA_size(priv_key);
 	int fd = open(PASSWD, O_RDONLY);
 	unsigned char *en_passwd = malloc(len * sizeof(char));
@@ -45,13 +55,12 @@ int main()
 	else
 	{
 		passwd[res - 1] = '\0'; // \n at end of file
-		printf("passwd: %s\n", passwd);
-		printf("Use this command:\n"
+		printf("\n>> The password is: %s\n", passwd);
+		printf("Use this command to decrypt the message:\n"
 			"'openssl enc -in encrypted_file.txt -out message.txt -d -aes256'\n");
 	}
 	
-	RSA_free(pubkey1);
-	RSA_free(pubkey2);
+	free(en_passwd); free(passwd);
 	RSA_free(priv_key); // p and q are inside priv_key
 }
 
